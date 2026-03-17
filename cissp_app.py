@@ -95,39 +95,38 @@ def load_question_bank():
 
 def get_offline_question(domain_id, difficulty, used_ids):
     """
-    Pick a random question from the local bank matching domain and difficulty.
-    Falls back to any domain-matched question, then any question, if no match.
-    Returns None if bank is empty.
+    Pick a random unused question from the local bank.
+    Tries exact domain+difficulty match first, then loosens constraints.
+    Never repeats a question that has already appeared this session.
+    Returns None only if every single question in the bank has been used.
     """
     bank = load_question_bank()
     if not bank:
         return None
 
-    # Try exact match: domain + difficulty, not already used
+    # Try 1: exact domain + exact difficulty, not used this session
     pool = [q for q in bank
             if q.get("domain") == domain_id
             and q.get("difficulty") == difficulty
             and q.get("id") not in used_ids]
 
-    # Fallback 1: same domain, any difficulty
+    # Try 2: same domain, any difficulty, not used
     if not pool:
         pool = [q for q in bank
                 if q.get("domain") == domain_id
                 and q.get("id") not in used_ids]
 
-    # Fallback 2: any question not yet used
+    # Try 3: any domain, any difficulty, not used
     if not pool:
         pool = [q for q in bank if q.get("id") not in used_ids]
 
-    # Fallback 3: entire bank (allow repeats)
-    if not pool:
-        pool = bank
-
+    # All questions exhausted for this session — return None (no repeats)
     if not pool:
         return None
 
     raw = random.choice(pool)
     return {
+        "id":          raw["id"],          # CRITICAL: must be returned so used_ids tracking works
         "domain_id":   raw.get("domain", domain_id),
         "difficulty":  raw.get("difficulty", difficulty),
         "topic":       raw.get("topic", ""),
@@ -253,6 +252,7 @@ def generate_question_ai(domain_id, difficulty, used_topics):
             assert len(data["options"]) == 4
             assert data["answer"] in (0, 1, 2, 3)
             return {
+                "id":          f"ai_{int(time.time()*1000)}_{random.randint(1000,9999)}",
                 "domain_id":   domain_id,
                 "difficulty":  difficulty,
                 "topic":       data.get("topic", topic),
@@ -283,15 +283,16 @@ def get_question(domain_id, difficulty, used_topics, used_ids, mode):
         q = get_offline_question(domain_id, difficulty, used_ids)
         if q is None:
             raise RuntimeError(
-                "Question bank is empty or cissp_questions.json not found. "
-                "Switch to Online or Hybrid mode, or add the question bank file."
+                "🎉 You have answered every question in the bank! "
+                "Start a new test to go again, or switch to Hybrid/Online mode for AI-generated questions."
             )
         return q
 
-    # Hybrid — offline first
+    # Hybrid — offline first, AI fallback
     q = get_offline_question(domain_id, difficulty, used_ids)
     if q is not None:
         return q
+    # Bank exhausted — fall back to AI
     return generate_question_ai(domain_id, difficulty, used_topics)
 
 
@@ -349,8 +350,10 @@ def _load_next_question():
         st.session_state.questions.append(q)
         if q.get("topic"):
             st.session_state.used_topics.append(q["topic"])
-        if q.get("id"):
-            st.session_state.used_ids.add(q["id"])
+        # Track the question id to prevent repeats — works for both offline and AI questions
+        qid = q.get("id")
+        if qid is not None:
+            st.session_state.used_ids.add(qid)
         st.session_state.selected_answer  = None
         st.session_state.show_explanation = False
         st.session_state.error_msg        = None
