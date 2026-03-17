@@ -57,24 +57,39 @@ NEON = "#00ff88"   # neon green — replaces all grey text throughout the app
 # ─────────────────────────────────────────────────────────────────────────────
 # QUESTION BANK  — load from cissp_questions.json if available
 # ─────────────────────────────────────────────────────────────────────────────
-@st.cache_data
 def load_question_bank():
     """
-    Load questions from cissp_questions.json in the same directory.
-    Returns a list of question dicts, or empty list if file not found.
+    Load questions from cissp_questions.json.
+    Stored in session_state so it loads once per session
+    but always fresh when the app restarts or redeploys.
+    Checks multiple locations so it works locally and on Streamlit Cloud.
     """
+    # Return cached version if already loaded this session
+    if "question_bank" in st.session_state and st.session_state.question_bank:
+        return st.session_state.question_bank
+
+    # All possible locations Streamlit Cloud or local might use
     paths = [
         "cissp_questions.json",
-        os.path.join(os.path.dirname(__file__), "cissp_questions.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "cissp_questions.json"),
+        os.path.join(os.getcwd(), "cissp_questions.json"),
+        "/app/cissp_questions.json",
+        "/mount/src/cissp_questions.json",
     ]
+
     for path in paths:
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                return data
+                if data:
+                    st.session_state.question_bank = data
+                    st.session_state.bank_path     = path
+                    return data
             except Exception:
                 pass
+
+    st.session_state.question_bank = []
     return []
 
 
@@ -179,7 +194,6 @@ class CATEngine:
 # ─────────────────────────────────────────────────────────────────────────────
 # CLAUDE AI  — online generation with retries
 # ─────────────────────────────────────────────────────────────────────────────
-@st.cache_resource
 def get_client():
     try:
         import anthropic
@@ -481,12 +495,12 @@ def screen_home():
                         format_func=lambda k: mode_options[k], index=0)
 
         if mode == "offline" and bank_size == 0:
-            st.error("No question bank found. Add cissp_questions.json or switch to Online mode.")
+            st.error("❌ cissp_questions.json not found in repo. Upload it to GitHub.")
         elif bank_size > 0:
-            st.success(f"📦 Bank: {bank_size} questions loaded")
+            st.success(f"✅ Bank loaded: {bank_size} questions")
+            st.caption(f"From: {st.session_state.get('bank_path', 'unknown')}")
         else:
-            st.warning("No local bank — AI mode only")
-
+            st.warning("⚠️ No local bank found — Online (AI) mode only")
         st.markdown("### 📚 Domains")
         all_sel = st.checkbox("All domains", value=True, key="chk_all")
         selected_domains = []
