@@ -19,7 +19,7 @@ import streamlit as st
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="CISSP Adaptive Exam",
-    page_icon="🔐",
+    page_icon=":lock:",
     layout="centered",
     initial_sidebar_state="expanded",
 )
@@ -47,28 +47,25 @@ DOMAINS = {
 }
 
 DIFFICULTIES = {
-    "easy":   {"label": "Foundational", "theta": -1.5, "emoji": "🟢"},
-    "medium": {"label": "Applied",      "theta":  0.0, "emoji": "🟡"},
-    "hard":   {"label": "Expert",       "theta":  1.5, "emoji": "🔴"},
+    "easy":   {"label": "Foundational", "tag": "[F]", "theta": -1.5},
+    "medium": {"label": "Applied",      "tag": "[A]", "theta":  0.0},
+    "hard":   {"label": "Expert",       "tag": "[X]", "theta":  1.5},
 }
 
-NEON = "#00ff88"   # neon green — replaces all grey text throughout the app
+NEON = "#00ff88"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# QUESTION BANK  — load from cissp_questions.json if available
+# QUESTION BANK
 # ─────────────────────────────────────────────────────────────────────────────
 def load_question_bank():
     """
     Load questions from cissp_questions.json.
     Stored in session_state so it loads once per session
     but always fresh when the app restarts or redeploys.
-    Checks multiple locations so it works locally and on Streamlit Cloud.
     """
-    # Return cached version if already loaded this session
     if "question_bank" in st.session_state and st.session_state.question_bank:
         return st.session_state.question_bank
 
-    # All possible locations Streamlit Cloud or local might use
     paths = [
         "cissp_questions.json",
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "cissp_questions.json"),
@@ -98,35 +95,30 @@ def get_offline_question(domain_id, difficulty, used_ids):
     Pick a random unused question from the local bank.
     Tries exact domain+difficulty match first, then loosens constraints.
     Never repeats a question that has already appeared this session.
-    Returns None only if every single question in the bank has been used.
     """
     bank = load_question_bank()
     if not bank:
         return None
 
-    # Try 1: exact domain + exact difficulty, not used this session
     pool = [q for q in bank
             if q.get("domain") == domain_id
             and q.get("difficulty") == difficulty
             and q.get("id") not in used_ids]
 
-    # Try 2: same domain, any difficulty, not used
     if not pool:
         pool = [q for q in bank
                 if q.get("domain") == domain_id
                 and q.get("id") not in used_ids]
 
-    # Try 3: any domain, any difficulty, not used
     if not pool:
         pool = [q for q in bank if q.get("id") not in used_ids]
 
-    # All questions exhausted for this session — return None (no repeats)
     if not pool:
         return None
 
     raw = random.choice(pool)
     return {
-        "id":          raw["id"],          # CRITICAL: must be returned so used_ids tracking works
+        "id":          raw["id"],
         "domain_id":   raw.get("domain", domain_id),
         "difficulty":  raw.get("difficulty", difficulty),
         "topic":       raw.get("topic", ""),
@@ -203,7 +195,6 @@ def get_client():
 
 
 def generate_question_ai(domain_id, difficulty, used_topics):
-    """Generate one question via Claude AI. Returns dict or raises RuntimeError."""
     client = get_client()
     if client is None:
         raise RuntimeError("No API client available — check ANTHROPIC_API_KEY in Secrets.")
@@ -237,7 +228,7 @@ def generate_question_ai(domain_id, difficulty, used_topics):
     last_error = None
     for attempt in range(1, 4):
         try:
-            response = client.messages.create(
+            response = get_client().messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=600,
                 messages=[{"role": "user", "content": prompt}],
@@ -271,11 +262,6 @@ def generate_question_ai(domain_id, difficulty, used_topics):
 
 
 def get_question(domain_id, difficulty, used_topics, used_ids, mode):
-    """
-    Master question fetcher.
-    mode: 'offline' | 'online' | 'hybrid'
-    hybrid = try offline first, fall back to AI
-    """
     if mode == "online":
         return generate_question_ai(domain_id, difficulty, used_topics)
 
@@ -283,16 +269,14 @@ def get_question(domain_id, difficulty, used_topics, used_ids, mode):
         q = get_offline_question(domain_id, difficulty, used_ids)
         if q is None:
             raise RuntimeError(
-                "🎉 You have answered every question in the bank! "
-                "Start a new test to go again, or switch to Hybrid/Online mode for AI-generated questions."
+                "You have answered every question in the bank. "
+                "Start a new test to go again, or switch to Hybrid or Online mode for AI-generated questions."
             )
         return q
 
-    # Hybrid — offline first, AI fallback
     q = get_offline_question(domain_id, difficulty, used_ids)
     if q is not None:
         return q
-    # Bank exhausted — fall back to AI
     return generate_question_ai(domain_id, difficulty, used_topics)
 
 
@@ -350,7 +334,6 @@ def _load_next_question():
         st.session_state.questions.append(q)
         if q.get("topic"):
             st.session_state.used_topics.append(q["topic"])
-        # Track the question id to prevent repeats — works for both offline and AI questions
         qid = q.get("id")
         if qid is not None:
             st.session_state.used_ids.add(qid)
@@ -381,19 +364,16 @@ html, body, [class*="css"] {{
     font-family: 'Inter', sans-serif;
 }}
 
-/* ── Background ── */
 .stApp {{
     background-color: #0d0f16;
     color: #e4e7f0;
 }}
 
-/* ── Sidebar ── */
 section[data-testid="stSidebar"] {{
     background-color: #0a0c12;
     border-right: 1px solid #1a1e2e;
 }}
 
-/* ── ALL grey / muted text → neon green ── */
 .stMarkdown p, .stMarkdown li,
 [data-testid="stCaptionContainer"],
 .stCaption, label, .stRadio label,
@@ -407,47 +387,39 @@ small, caption,
     color: {NEON} !important;
 }}
 
-/* ── Metric values stay white/bright ── */
 [data-testid="stMetricValue"] {{
     font-size: 2rem !important;
     font-weight: 900 !important;
     color: #ffffff !important;
 }}
 
-/* ── Headings ── */
 h1, h2, h3, h4 {{
     color: #e4e7f0 !important;
 }}
 
-/* ── Progress bar ── */
 div[data-testid="stProgress"] > div > div {{
     background-color: #3b6bfa !important;
 }}
 
-/* ── Info / success / error boxes ── */
 [data-testid="stAlert"] p {{
     color: #e4e7f0 !important;
 }}
 
-/* ── Sidebar text ── */
 section[data-testid="stSidebar"] .stMarkdown p,
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {{
     color: {NEON} !important;
 }}
 
-/* ── Selectbox / radio options ── */
 div[data-baseweb="select"] span,
 div[data-baseweb="radio"] label {{
     color: {NEON} !important;
 }}
 
-/* ── Expander header text ── */
 .streamlit-expanderHeader p {{
     color: {NEON} !important;
 }}
 
-/* ── Badge helper ── */
 .badge {{
     display: inline-block;
     border-radius: 6px;
@@ -457,7 +429,6 @@ div[data-baseweb="radio"] label {{
     margin-right: 6px;
 }}
 
-/* ── Source tag ── */
 .src-tag {{
     font-size: 10px;
     font-weight: 700;
@@ -477,7 +448,7 @@ div[data-baseweb="radio"] label {{
 # ─────────────────────────────────────────────────────────────────────────────
 def screen_home():
     st.markdown(CSS, unsafe_allow_html=True)
-    st.markdown("# 🔐 CISSP Adaptive Practice Exam")
+    st.markdown("# CISSP Adaptive Practice Exam")
     st.markdown("*AI-generated questions and a local question bank that adapt to your ability level.*")
     st.divider()
 
@@ -485,65 +456,64 @@ def screen_home():
     bank_size = len(bank)
 
     with st.sidebar:
-        st.markdown("## ⚙️ Configuration")
+        st.markdown("## Configuration")
 
-        # Mode selector
-        st.markdown("### 🌐 Question Source")
+        st.markdown("### Question Source")
         mode_options = {
-            "hybrid":  "🔀 Hybrid  (bank first, AI fallback)",
-            "offline": "📦 Offline (local bank only)",
-            "online":  "🤖 Online  (Claude AI only)",
+            "hybrid":  "Hybrid  (bank first, AI fallback)",
+            "offline": "Offline (local bank only)",
+            "online":  "Online  (Claude AI only)",
         }
         mode = st.radio("Source mode", list(mode_options.keys()),
                         format_func=lambda k: mode_options[k], index=0)
 
         if mode == "offline" and bank_size == 0:
-            st.error("❌ cissp_questions.json not found in repo. Upload it to GitHub.")
+            st.error("cissp_questions.json not found. Upload it to your GitHub repo.")
         elif bank_size > 0:
-            st.success(f"✅ Bank loaded: {bank_size} questions")
+            st.success(f"Bank loaded: {bank_size} questions")
             st.caption(f"From: {st.session_state.get('bank_path', 'unknown')}")
         else:
-            st.warning("⚠️ No local bank found — Online (AI) mode only")
-        st.markdown("### 📚 Domains")
+            st.warning("No local bank found — Online (AI) mode only")
+
+        st.markdown("### Domains")
         all_sel = st.checkbox("All domains", value=True, key="chk_all")
         selected_domains = []
         for did, info in DOMAINS.items():
             if st.checkbox(f"D{did}: {info['short']}", value=all_sel, key=f"d_{did}"):
                 selected_domains.append(did)
 
-        st.markdown("### 🎯 Questions")
+        st.markdown("### Questions")
         q_count = st.select_slider("How many?", options=[10, 15, 25, 50, 75], value=25)
 
-        st.markdown("### 📈 Starting Difficulty")
+        st.markdown("### Starting Difficulty")
         start_diff = st.radio(
             "CAT adapts from here",
             ["easy", "medium", "hard"], index=1,
-            format_func=lambda d: f"{DIFFICULTIES[d]['emoji']} {DIFFICULTIES[d]['label']}"
+            format_func=lambda d: f"{DIFFICULTIES[d]['tag']} {DIFFICULTIES[d]['label']}"
         )
 
-        st.markdown("### ⏱ Timer")
+        st.markdown("### Timer")
         timed       = st.toggle("Enable countdown timer", value=True)
         timer_hours = st.select_slider("Hours", options=[1,2,3,4], value=3) if timed else None
 
         st.divider()
-        go = st.button("🚀 Start Test", type="primary",
+        go = st.button("Start Test", type="primary",
                        use_container_width=True,
                        disabled=len(selected_domains) == 0)
 
-    # ── Info cards ────────────────────────────────────────────────────────
     c1, c2, c3 = st.columns(3)
     c1.metric("Domains",   "8 covered")
     c2.metric("Algorithm", "IRT 3-PL CAT")
     c3.metric("Bank",      f"{bank_size} Qs" if bank_size else "AI only")
 
     st.info(
-        f"**Hybrid mode** uses your local question bank first (fast, no API cost), "
-        f"then falls back to Claude AI for fresh questions when the bank runs low. "
-        f"**Offline mode** uses only the bank — no API key needed. "
-        f"**Online mode** generates every question live with Claude AI."
+        "**Hybrid mode** uses your local question bank first (fast, no API cost), "
+        "then falls back to Claude AI for fresh questions when the bank runs low. "
+        "**Offline mode** uses only the bank — no API key needed. "
+        "**Online mode** generates every question live with Claude AI."
     )
 
-    st.markdown("### 📋 CISSP Domains")
+    st.markdown("### CISSP Domains")
     for did, info in DOMAINS.items():
         with st.expander(f"D{did}: {info['name']}"):
             st.caption(", ".join(info["topics"]))
@@ -578,17 +548,17 @@ def screen_home():
 # ─────────────────────────────────────────────────────────────────────────────
 def screen_loading():
     st.markdown(CSS, unsafe_allow_html=True)
-    st.markdown("## ⏳ Preparing your test…")
+    st.markdown("## Preparing your test...")
 
     cfg   = st.session_state.config
     names = [f"D{d}: {DOMAINS[d]['short']}" for d in cfg["selected_domains"]]
     st.write(f"**Domains:** {', '.join(names)}")
-    st.write(f"**Questions:** {cfg['q_count']}  ·  **Start level:** {DIFFICULTIES[cfg['start_diff']]['label']}  ·  **Mode:** {cfg['mode']}")
+    st.write(f"**Questions:** {cfg['q_count']}  |  **Start level:** {DIFFICULTIES[cfg['start_diff']]['label']}  |  **Mode:** {cfg['mode']}")
 
     spinner_msg = (
-        "Loading from question bank…" if cfg["mode"] == "offline"
-        else "Claude is writing your first question (5–10 sec)…" if cfg["mode"] == "online"
-        else "Fetching first question…"
+        "Loading from question bank..." if cfg["mode"] == "offline"
+        else "Claude is writing your first question (5-10 sec)..." if cfg["mode"] == "online"
+        else "Fetching first question..."
     )
 
     with st.spinner(spinner_msg):
@@ -598,14 +568,14 @@ def screen_loading():
         st.session_state.screen = "test"
         st.rerun()
     else:
-        st.error(f"❌ {st.session_state.error_msg}")
+        st.error(st.session_state.error_msg)
         st.markdown("**Common fixes:**")
-        st.markdown(f"- If using Online/Hybrid: check `ANTHROPIC_API_KEY` is set in Streamlit Secrets and your account has credits at console.anthropic.com")
-        st.markdown(f"- If using Offline: make sure `cissp_questions.json` is in the same folder as `cissp_app.py`")
+        st.markdown("- Online/Hybrid: check ANTHROPIC_API_KEY is set in Streamlit Secrets and your account has credits")
+        st.markdown("- Offline: make sure cissp_questions.json is in the same folder as cissp_app.py")
         c1, c2 = st.columns(2)
-        if c1.button("🔄 Retry"):
+        if c1.button("Retry"):
             st.rerun()
-        if c2.button("← Back to Home"):
+        if c2.button("Back to Home"):
             reset_test()
             st.rerun()
 
@@ -622,10 +592,10 @@ def screen_test():
     idx       = st.session_state.current_idx
 
     if idx >= len(questions):
-        with st.spinner("Fetching question…"):
+        with st.spinner("Fetching question..."):
             if not _load_next_question():
                 st.error(st.session_state.error_msg)
-                if st.button("🔄 Retry"):
+                if st.button("Retry"):
                     st.rerun()
                 return
 
@@ -638,7 +608,7 @@ def screen_test():
     left, mid, right = st.columns([4, 2, 1])
     with left:
         st.progress((idx + (1 if answered else 0)) / total_q)
-        st.caption(f"Q{idx+1} of {total_q}  ·  θ={cat.theta:.2f}  ·  **{a_label}**")
+        st.caption(f"Q{idx+1} of {total_q}  |  theta={cat.theta:.2f}  |  {a_label}")
     with mid:
         if cfg["timed"] and cfg["timer_secs"]:
             remaining = cfg["timer_secs"] - int(time.time() - st.session_state.start_time)
@@ -646,10 +616,10 @@ def screen_test():
                 st.session_state.elapsed = cfg["timer_secs"]
                 st.session_state.screen  = "results"
                 st.rerun()
-            icon = "🔴" if remaining < 600 else "🟡" if remaining < 1800 else "🟢"
-            st.markdown(f"**{icon} {_fmt(remaining)}**")
+            warn = "[LOW] " if remaining < 600 else ""
+            st.markdown(f"**{warn}{_fmt(remaining)}**")
         else:
-            st.caption(f"⏱ {_fmt(int(time.time() - st.session_state.start_time))}")
+            st.caption(f"Elapsed: {_fmt(int(time.time() - st.session_state.start_time))}")
     with right:
         if st.button("Finish"):
             st.session_state.elapsed = int(time.time() - st.session_state.start_time)
@@ -663,15 +633,15 @@ def screen_test():
     dif_info = DIFFICULTIES[q["difficulty"]]
     src      = q.get("source", "offline")
     src_html = (
-        f'<span class="src-tag src-offline">📦 Bank</span>' if src == "offline"
-        else f'<span class="src-tag src-ai">🤖 AI</span>'
+        '<span class="src-tag src-offline">Bank</span>' if src == "offline"
+        else '<span class="src-tag src-ai">AI</span>'
     )
 
     st.markdown(
         f'<span class="badge" style="background:{d_info["color"]}22;color:{d_info["color"]};'
         f'border:1px solid {d_info["color"]}55;">D{q["domain_id"]}: {d_info["short"]}</span>'
         f'<span class="badge" style="background:#1a1e2e;color:{NEON};">'
-        f'{dif_info["emoji"]} {dif_info["label"]}</span>'
+        f'{dif_info["tag"]} {dif_info["label"]}</span>'
         + (f'<span class="badge" style="background:#1a1e2e;color:{NEON};">{q["topic"]}</span>'
            if q.get("topic") else "")
         + src_html,
@@ -682,7 +652,7 @@ def screen_test():
     flagged: set = st.session_state.flagged
     fc, _ = st.columns([1, 9])
     with fc:
-        if st.button("🚩 Flagged" if idx in flagged else "⬜ Flag"):
+        if st.button("[ Flagged ]" if idx in flagged else "[ Flag ]"):
             flagged.discard(idx) if idx in flagged else flagged.add(idx)
             st.rerun()
 
@@ -705,9 +675,9 @@ def screen_test():
         sel = st.session_state.selected_answer
         for i, opt in enumerate(q["options"]):
             if i == q["answer"]:
-                st.success(f"**{letters[i]}.** {opt}  ✓")
+                st.success(f"**{letters[i]}.** {opt}  [CORRECT]")
             elif i == sel:
-                st.error(f"**{letters[i]}.** {opt}  ✗  ← your answer")
+                st.error(f"**{letters[i]}.** {opt}  [YOUR ANSWER]")
             else:
                 st.markdown(f"**{letters[i]}.** {opt}")
 
@@ -715,18 +685,18 @@ def screen_test():
     if st.session_state.show_explanation:
         is_correct = (st.session_state.selected_answer == q["answer"])
         if is_correct:
-            st.success("✅ Correct!")
+            st.success("Correct")
         else:
-            st.error(f"❌ Incorrect — correct answer was **{letters[q['answer']]}**")
+            st.error(f"Incorrect — correct answer was {letters[q['answer']]}")
 
-        with st.expander("📖 Explanation", expanded=True):
+        with st.expander("Explanation", expanded=True):
             st.write(q["explanation"])
 
         new_label, _ = cat.ability_label()
         next_diff    = cat.next_difficulty()
         st.info(
-            f"θ updated to **{cat.theta:.2f}** · Ability: **{new_label}** · "
-            f"Next: **{DIFFICULTIES[next_diff]['label']}** level"
+            f"theta updated to {cat.theta:.2f}  |  Ability: {new_label}  |  "
+            f"Next question: {DIFFICULTIES[next_diff]['label']} level"
         )
 
     # ── Navigation ────────────────────────────────────────────────────────
@@ -734,7 +704,7 @@ def screen_test():
     nl, nr = st.columns(2)
 
     with nl:
-        if idx > 0 and st.button("← Previous", use_container_width=True):
+        if idx > 0 and st.button("Previous", use_container_width=True):
             st.session_state.current_idx     -= 1
             prev_q = questions[st.session_state.current_idx]
             st.session_state.selected_answer  = prev_q.get("_user_answer")
@@ -744,7 +714,7 @@ def screen_test():
     with nr:
         if answered:
             is_last = (idx + 1 >= total_q)
-            if st.button("🏁 See Results" if is_last else "Next Question →",
+            if st.button("View Results" if is_last else "Next Question",
                          type="primary", use_container_width=True):
                 questions[idx]["_user_answer"] = st.session_state.selected_answer
                 if is_last:
@@ -755,10 +725,10 @@ def screen_test():
                     st.session_state.current_idx += 1
                     nxt = st.session_state.current_idx
                     if nxt >= len(questions):
-                        with st.spinner("Loading next question…"):
+                        with st.spinner("Loading next question..."):
                             ok = _load_next_question()
                         if not ok:
-                            st.error(f"⚠️ {st.session_state.error_msg}")
+                            st.error(st.session_state.error_msg)
                     else:
                         nq = questions[nxt]
                         st.session_state.selected_answer  = nq.get("_user_answer")
@@ -767,22 +737,22 @@ def screen_test():
 
     # ── Sidebar navigator ─────────────────────────────────────────────────
     with st.sidebar:
-        st.markdown("### 📋 Progress")
+        st.markdown("### Progress")
         cols = st.columns(5)
         for i in range(len(questions)):
             c = cols[i % 5]
             if i < len(st.session_state.q_answered):
-                c.markdown("✅" if st.session_state.q_answered[i] else "❌")
+                c.markdown("**+**" if st.session_state.q_answered[i] else "**-**")
             elif i in flagged:
-                c.markdown("🚩")
+                c.markdown("**F**")
             elif i == idx:
-                c.markdown(f"**{i+1}**")
+                c.markdown(f"**[{i+1}]**")
             else:
-                c.markdown(f"_{i+1}_")
+                c.markdown(f"{i+1}")
         st.divider()
-        st.caption("✅ Correct  ❌ Wrong  🚩 Flagged")
+        st.caption("+ Correct  - Wrong  F Flagged")
         st.divider()
-        if st.button("🏠 Home", use_container_width=True):
+        if st.button("Home", use_container_width=True):
             reset_test()
             st.rerun()
 
@@ -799,31 +769,29 @@ def screen_results():
     a_label, _ = cat.ability_label()
     pass_prob  = cat.pass_probability()
 
-    st.markdown("# 🎓 Your Results")
+    st.markdown("# Results")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Score",    f"{stats['pct']}%")
     c2.metric("Correct",  f"{stats['correct']}/{stats['total']}")
     c3.metric("Ability",  a_label)
-    c4.metric("θ",        f"{cat.theta:.2f}")
+    c4.metric("theta",    f"{cat.theta:.2f}")
 
     if pass_prob >= 65:
-        st.success(f"🎯 Estimated CISSP pass probability: **{pass_prob}%** — You're on track!")
+        st.success(f"Estimated CISSP pass probability: {pass_prob}% — On track.")
     else:
-        st.warning(f"📚 Estimated CISSP pass probability: **{pass_prob}%** — Keep studying!")
+        st.warning(f"Estimated CISSP pass probability: {pass_prob}% — Keep studying.")
 
     st.caption(f"Time: {_fmt(elapsed)}")
     st.divider()
 
-    # Θ chart
-    st.markdown("### 📈 Ability (θ) Over Time")
-    st.line_chart({"θ": stats["theta_history"]})
-    st.caption("Below −1 = Foundational · −1 to 0 = Developing · 0 to +1 = Competent · Above +1 = Proficient/Expert")
+    st.markdown("### Ability (theta) Over Time")
+    st.line_chart({"theta": stats["theta_history"]})
+    st.caption("Below -1 = Foundational  |  -1 to 0 = Developing  |  0 to +1 = Competent  |  Above +1 = Proficient / Expert")
 
     st.divider()
 
-    # Difficulty breakdown
-    st.markdown("### 🎯 By Difficulty")
+    st.markdown("### Performance by Difficulty")
     dc = st.columns(3)
     for ci, dk in enumerate(("easy", "medium", "hard")):
         inf = stats["by_diff"][dk]
@@ -832,8 +800,7 @@ def screen_results():
 
     st.divider()
 
-    # Domain breakdown
-    st.markdown("### 📚 By Domain")
+    st.markdown("### Performance by Domain")
     dom_stats = {}
     for i, q in enumerate(questions):
         did = q["domain_id"]
@@ -848,8 +815,7 @@ def screen_results():
 
     st.divider()
 
-    # Full review
-    st.markdown("### 🔍 Review Every Question")
+    st.markdown("### Question Review")
     show = st.radio("Filter:", ["All", "Correct only", "Incorrect only"], horizontal=True)
 
     for i, q in enumerate(questions):
@@ -861,20 +827,20 @@ def screen_results():
 
         d_info  = DOMAINS[q["domain_id"]]
         di_info = DIFFICULTIES[q["difficulty"]]
-        icon    = "✅" if correct else "❌"
+        result  = "PASS" if correct else "FAIL"
         src     = q.get("source", "offline")
-        src_lbl = "📦" if src == "offline" else "🤖"
+        src_lbl = "[Bank]" if src == "offline" else "[AI]"
 
         with st.expander(
-            f"{icon} Q{i+1} · D{q['domain_id']}: {d_info['short']} · "
-            f"{di_info['label']} · {q.get('topic','')} {src_lbl}"
+            f"{result} | Q{i+1} | D{q['domain_id']}: {d_info['short']} | "
+            f"{di_info['label']} | {q.get('topic','')} {src_lbl}"
         ):
             st.markdown(f"**{q['question']}**")
             st.write("")
             letters = ["A","B","C","D"]
             for j, opt in enumerate(q["options"]):
                 if j == q["answer"]:
-                    st.success(f"**{letters[j]}.** {opt}  ✓")
+                    st.success(f"**{letters[j]}.** {opt}  [CORRECT]")
                 else:
                     st.markdown(f"**{letters[j]}.** {opt}")
             st.divider()
@@ -882,7 +848,7 @@ def screen_results():
             st.write(q["explanation"])
 
     st.divider()
-    if st.button("🔄 New Test", type="primary", use_container_width=True):
+    if st.button("New Test", type="primary", use_container_width=True):
         reset_test()
         st.rerun()
 
