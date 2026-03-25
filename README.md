@@ -203,4 +203,4 @@ deployment pipeline configuration.
 ## Author
 
 Edwin Acquah
-Cybersecurity Portfolio: github.com/YOUR_USERNAME
+Security Analyst:  github.com/mr3ddy94
